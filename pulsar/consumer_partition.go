@@ -166,16 +166,19 @@ type partitionConsumer struct {
 func newPartitionConsumer(parent Consumer, client *client, options *partitionConsumerOpts,
 	messageCh chan ConsumerMessage, dlq *dlqRouter) (*partitionConsumer, error) {
 	pc := &partitionConsumer{
-		state:                consumerInit,
-		parentConsumer:       parent,
-		client:               client,
-		options:              options,
-		topic:                options.topic,
-		name:                 options.consumerName,
-		consumerID:           client.rpcClient.NewConsumerID(),
-		partitionIdx:         int32(options.partitionIdx),
-		eventsCh:             make(chan interface{}, 3),
-		queueSize:            int32(options.receiverQueueSize),
+		state:          consumerInit,
+		parentConsumer: parent,
+		client:         client,
+		options:        options,
+		topic:          options.topic,
+		name:           options.consumerName,
+		consumerID:     client.rpcClient.NewConsumerID(),
+		partitionIdx:   int32(options.partitionIdx),
+		// eventsCh 作用
+		eventsCh:  make(chan interface{}, 3),
+		queueSize: int32(options.receiverQueueSize),
+		// queueCh 作用：每一个 partition consumer会与对应的 partition连接，接收到消息后会扔到整个队列
+		// 默认值chan大小是1000
 		queueCh:              make(chan []*message, options.receiverQueueSize),
 		startMessageID:       options.startMessageID,
 		connectedCh:          make(chan struct{}),
@@ -450,7 +453,7 @@ func (pc *partitionConsumer) internalAck(req *ackRequest) {
 
 func (pc *partitionConsumer) MessageReceived(response *pb.CommandMessage, headersAndPayload internal.Buffer) error {
 	pbMsgID := response.GetMessageId()
-
+	fmt.Printf("partion consumer:%v---%v receive message, msgId:%+v\n", pc.name, pc.consumerID, pbMsgID)
 	reader := internal.NewMessageReader(headersAndPayload)
 	msgMeta, err := reader.ReadMessageMetadata()
 	if err != nil {
@@ -623,7 +626,8 @@ func (pc *partitionConsumer) dispatcher() {
 		select {
 		case <-pc.closeCh:
 			return
-
+		// 所以一开始的时候，是会命中connectedCh、还是queueCh(select 随机)
+		// 还是说如果connectedCh逻辑下，不给broker发送permit，broker是不会发送消息的
 		case _, ok := <-pc.connectedCh:
 			if !ok {
 				return
@@ -638,10 +642,14 @@ func (pc *partitionConsumer) dispatcher() {
 
 			pc.log.Debugf("dispatcher requesting initial permits=%d", initialPermits)
 			// send initial permits
+			// 这块是和kafka的区别，采用的是broker push的方式
+			// 将该partition consumer可以消费消息的队列大小告知broker
 			if err := pc.internalFlow(initialPermits); err != nil {
 				pc.log.WithError(err).Error("unable to send initial permits to broker")
 			}
-
+		// 当上一个批次的数据还没有处理完，即messages里面还有消息。这个时候queueCh中又要数据怎么办
+		// 注意，这次select结束以后，重新进入for循环，queueCh这些被清除掉了
+		// 而messages是for之外的变量，因此任然保持有效
 		case msgs, ok := <-queueCh:
 			if !ok {
 				return
@@ -651,6 +659,7 @@ func (pc *partitionConsumer) dispatcher() {
 			messages = msgs
 
 		// if the messageCh is nil or the messageCh is full this will not be selected
+		// 依次将获取到的messages中的消息，发送给Consumer级别的外部Chan。一旦外部Chan满了（被其他partition consumer的消息塞满），该for循环将不断空转
 		case messageCh <- nextMessage:
 			// allow this message to be garbage collected
 			messages[0] = nil
@@ -858,6 +867,7 @@ func (pc *partitionConsumer) grabConn() error {
 		cmdSubscribe.Metadata = toKeyValues(pc.options.metadata)
 	}
 
+	// 消费一个不存在的topic，默认情况下，会创建topic。这是什么原因？走到这一步应该是有topic存在的，否则分区topic怎么来的
 	// force topic creation is enabled by default so
 	// we only need to set the flag when disabling it
 	if pc.options.disableForceTopicCreation {

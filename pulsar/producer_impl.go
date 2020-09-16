@@ -19,6 +19,7 @@ package pulsar
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -64,7 +65,7 @@ type producer struct {
 	log *log.Entry
 }
 
-const defaultBatchingMaxPublishDelay = 10 * time.Millisecond
+const defaultBatchingMaxPublishDelay = 1 * time.Second
 
 var partitionsAutoDiscoveryInterval = 1 * time.Minute
 
@@ -141,6 +142,8 @@ func newProducer(client *client, options *ProducerOptions) (*producer, error) {
 
 func (p *producer) internalCreatePartitionsProducers() error {
 	partitions, err := p.client.TopicPartitions(p.topic)
+
+	fmt.Printf("=============:partitions %+v\n", partitions)
 	if err != nil {
 		return err
 	}
@@ -152,6 +155,7 @@ func (p *producer) internalCreatePartitionsProducers() error {
 	defer p.Unlock()
 
 	oldProducers := p.producers
+	fmt.Printf("=============:old partitions: %+v,  new partitions:%+v\n", len(oldProducers), newNumPartitions)
 
 	if oldProducers != nil {
 		oldNumPartitions = len(oldProducers)
@@ -249,6 +253,7 @@ func (p *producer) getPartition(msg *ProducerMessage) Producer {
 	// Since partitions can only increase, it's ok if the producers list
 	// is updated in between. The numPartition is updated only after the list.
 	partition := p.messageRouter(msg, p)
+	// 此处担心slice的并发操作
 	producers := *(*[]Producer)(atomic.LoadPointer(&p.producersPtr))
 	if partition >= len(producers) {
 		// We read the old producers list while the count was already

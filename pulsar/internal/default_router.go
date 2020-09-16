@@ -68,6 +68,7 @@ func NewDefaultRouter(clock Clock, hashFunc func(string) uint32,
 		// of batching of the messages.
 		//
 		//currentMs / maxBatchingDelayMs + startPtnIdx
+		// 当开启了批量操作，会尽可能将消息集中在某一个partition producer发送，已达到更好的批次效果
 		if !disableBatching && maxBatchingDelay.Nanoseconds() > 0 {
 			n := uint32(state.clock()/uint64(maxBatchingDelay.Nanoseconds())) + state.shiftIdx
 			return int(n % numPartitions)

@@ -159,6 +159,8 @@ func (r *reader) HasNext() bool {
 	}
 
 	for {
+		//获取消息。测试的时候，这个requestId，收到了broker的两条resp
+		// 第二条消息报错：Failed to get batch size for entry org.apache.bookkeeper.mledger.ManagedLedgerException: Incorrect parameter input
 		lastMsgID, err := r.pc.getLastMessageID()
 		if err != nil {
 			r.log.WithError(err).Error("Failed to get last message id from broker")

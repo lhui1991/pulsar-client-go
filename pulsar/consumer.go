@@ -40,6 +40,9 @@ const (
 	// a round-robin rotation between the connected consumers
 	Shared
 
+	// 采用Failover模式，所有的consumer实例将均摊 partition的消息
+	// 也就是说一个partition的消息只会被一个consumer消费
+	// 下面的英文存在歧义，并不是只有1个consumer将接受到消息（当有新的consumer加入进队列时，broker端将重新分配）
 	// Failover subscription mode, multiple consumer will be able to use the same subscription name
 	// but only 1 consumer will receive the messages.
 	// If that consumer disconnects, one of the other connected consumers will start receiving messages.

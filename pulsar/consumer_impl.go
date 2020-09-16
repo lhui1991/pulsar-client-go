@@ -195,6 +195,7 @@ func (c *consumer) Name() string {
 }
 
 func (c *consumer) internalTopicSubscribeToPartitions() error {
+	// 查找topic partition的元数据信息
 	partitions, err := c.client.TopicPartitions(c.topic)
 	if err != nil {
 		return err

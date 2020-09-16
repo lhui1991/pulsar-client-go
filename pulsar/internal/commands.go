@@ -202,6 +202,7 @@ func baseCommand(cmdType pb.BaseCommand_Type, msg proto.Message) *pb.BaseCommand
 	return cmd
 }
 
+// 按照一定的格式写到
 func addSingleMessageToBatch(wb Buffer, smm *pb.SingleMessageMetadata, payload []byte) {
 	metadataSize := uint32(smm.Size())
 	wb.WriteUint32(metadataSize)

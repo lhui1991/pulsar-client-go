@@ -20,6 +20,7 @@ package pulsar
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -134,6 +135,7 @@ func newPartitionProducer(client *client, topic string, options *ProducerOptions
 		producerID:       client.rpcClient.NewProducerID(),
 		eventsChan:       make(chan interface{}, maxPendingMessages),
 		batchFlushTicker: time.NewTicker(batchingMaxPublishDelay),
+		// 实则是通过这个信号量的大小，来控制最大的Pending消息数量，在internalSendAsync 将消息扔到channel前获取信号量
 		publishSemaphore: internal.NewSemaphore(int32(maxPendingMessages)),
 		pendingQueue:     internal.NewBlockingQueue(maxPendingMessages),
 		lastSequenceID:   -1,
@@ -208,10 +210,15 @@ func (p *partitionProducer) grabCnx() error {
 	p.cnx = res.Cnx
 	p.cnx.RegisterListener(p.producerID, p)
 	p.log.WithField("cnx", res.Cnx.ID()).Debug("Connected producer")
+	// 当broker发生变更的时候，partition producer（某一些topic owner发生变更的partition topic）中的连接将接收到 broker 发送pb.BaseCommand_CLOSE_PRODUCER 消息，然后执行
+	// close conn的操作，并且发送close信号给partition producer的eventsChan。接受到信号以后，partition producer 将重新发起与新的 broker owner 重连信号，也就是执行到这里啦
+	// 在这个过程中，仍然有一部分的消息将路由给该partition producer，因此存在积压的现象，一旦连接建立优先将该部分的消息发送出去
 
 	pendingItems := p.pendingQueue.ReadableSlice()
 	if len(pendingItems) > 0 {
 		p.log.Infof("Resending %d pending batches", len(pendingItems))
+
+		fmt.Printf("===============================Resending %d pending batches\n", len(pendingItems))
 		for _, pi := range pendingItems {
 			p.cnx.WriteData(pi.(*pendingItem).batchData)
 		}
@@ -371,7 +378,7 @@ func (p *partitionProducer) internalFlushCurrentBatch() {
 	if batchData == nil {
 		return
 	}
-
+	//将一个批次打包成一个pendItem，存放在pendingQueue中。 在connection的readFromConnection协程（connection run）中,接受resp
 	p.pendingQueue.Put(&pendingItem{
 		batchData:    batchData,
 		sequenceID:   sequenceID,
@@ -454,6 +461,9 @@ func (p *partitionProducer) internalSendAsync(ctx context.Context, msg *Producer
 	p.eventsChan <- sr
 }
 
+// 接受Resp后的处理逻辑，处理callback逻辑
+// 疑问，一个批次的发送，MsgId一定会属于同一个LedgerId 和 EntryId吗
+// batchIdx实则是在client直接生成的
 func (p *partitionProducer) ReceivedSendReceipt(response *pb.CommandSendReceipt) {
 	pi, ok := p.pendingQueue.Peek().(*pendingItem)
 

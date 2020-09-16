@@ -110,7 +110,7 @@ type Client interface {
 	CreateProducer(ProducerOptions) (Producer, error)
 
 	// Create a `Consumer` by subscribing to a topic.
-	//
+	// 注意啦
 	// If the subscription does not exist, a new subscription will be created and all messages published after the
 	// creation will be retained until acknowledged, even if the consumer is not connected
 	Subscribe(ConsumerOptions) (Consumer, error)

@@ -588,6 +588,7 @@ func (c *connection) handleResponseError(serverError *pb.CommandError) {
 	request.callback(nil, errors.New(errMsg))
 }
 
+// 接受发送命令的返回
 func (c *connection) handleSendReceipt(response *pb.CommandSendReceipt) {
 	producerID := response.GetProducerId()
 

@@ -167,6 +167,7 @@ func (c *client) TopicPartitions(topic string) ([]string, error) {
 	}
 
 	// Non-partitioned topic
+	// 非partition topic 返回的BaseCommand_PARTITIONED_METADATA 为空
 	return []string{topicName.Name}, nil
 }
 
